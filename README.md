@@ -1,137 +1,106 @@
-YOLO Object Detection - 3 Class Production Pipeline
+# yolo-personas-autos-perros
 
-Objective
-Production-ready YOLO object detection system with 3 classes (person, car, dog). Implements YOLOv8 architecture with MLflow tracking and inference API.
+[![CI](https://github.com/Whiteherobot/yolo-personas-autos-perros/actions/workflows/ci.yml/badge.svg)](https://github.com/Whiteherobot/yolo-personas-autos-perros/actions/workflows/ci.yml)
 
-Features
-- YOLO object detection on 3 specialized classes
-- YOLOv8n backbone architecture
-- Single-stage training with MLflow integration
-- Model Registry for version control
-- REST API for inference
-- Reproducible training (seed 42)
+Detector de personas, autos y perros: YOLOv8s ajustado con Pascal VOC 2007 y
+servido con una API Flask y una página para subir imágenes. Proyecto de
+Inteligencia Artificial (febrero de 2026), hecho en pareja.
 
-Technical Stack
-- Ultralytics YOLOv8
-- PyTorch
-- MLflow 2.0+ (SQLite backend)
-- Flask (inference API)
-- Python 3.9+
+| | |
+|---|---|
+| ![Personas y autos](docs/deteccion_autos.jpg) | ![Perro](docs/deteccion_perro.jpg) |
 
-Dataset
-- Format: YOLO bounding box format
-- Classes: 3 (person, car, dog)
-- Images: 416x416 RGB
-- Split: train/val/test
-- Total: 500 images
+## Resultados
 
-Prerequisites
-- Python 3.9+
-- CUDA 11.8+ (optional, for GPU)
-- 8GB RAM
-- 10GB storage
+Evaluado en la división **test oficial de VOC 2007** (2821 imágenes con
+alguna de las tres clases, que no se usaron para entrenar):
 
-Installation
+| Clase | AP50 | AP50-95 |
+|---|---|---|
+| Persona | 0,869 | 0,589 |
+| Auto | 0,906 | 0,705 |
+| Perro | 0,795 | 0,535 |
+| **Promedio (mAP)** | **0,856** | **0,610** |
+
+Precisión 0,814 y recall 0,801 con el umbral por defecto. Entrenado desde los
+pesos COCO de YOLOv8s, 640 px; paró en la época 91 por *early stopping* y se
+quedó con la 71 (`models/yolov8s_voc3.json`). En una RTX 4060 tardó una hora.
+
+## Uso
+
+```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+flask --app app.servidor run            # http://localhost:5000
+```
 
-Training Pipeline
+| Método | Ruta | |
+|---|---|---|
+| POST | `/predict` | Imagen en el campo `image` y, opcional, `conf` (0,01 a 0,99; por defecto 0,25). Devuelve detecciones (clase, confianza, caja), el conteo por clase y la imagen anotada en base64. |
+| GET | `/health`, `/model-info` | Estado y clases del modelo. |
 
-1. Data Preparation:
-python prepare_dataset.py
+`MODELO=ruta/a/pesos.pt` usa otros pesos.
 
-2. Dataset Validation:
-jupyter notebook notebooks/01_dataset_validation.ipynb
+## Entrenar de nuevo
 
-3. Model Training:
-jupyter notebook notebooks/02_train_yolo.ipynb
+```bash
+pip install -r requirements-dev.txt
+python scripts/preparar_voc.py          # descarga VOC 2007 (~900 MB) y lo deja en data/ en formato YOLO
+python scripts/entrenar.py --modelo yolov8s.pt --epocas 100
+```
 
-4. Inference Testing:
-jupyter notebook notebooks/03_inference.ipynb
+`preparar_voc.py` usa la división oficial (trainval para entrenar, un 10 %
+de ella para validación, test para evaluar) y omite los objetos marcados como
+`difficult`, como la evaluación oficial. `entrenar.py` copia los mejores pesos
+a `models/` y escribe sus métricas en test. Con `mlflow` instalado, Ultralytics
+registra la corrida en `mlruns/`.
 
-MLflow Tracking UI
-mlflow ui --backend-store-uri file:///mlruns
+Los cuadernos `notebooks/01` a `05` son los de la clase, con sus salidas; las
+notas al principio del 01 y del 05 explican en qué difieren de esta versión.
 
-Inference API
-python app/inference_api.py
+## Pruebas
 
-Test API:
-python test_inference_api.py
+```bash
+pytest
+```
 
-API Endpoints
-GET /health
-GET /model-info
-POST /predict (multipart image upload)
+Conversión de anotaciones VOC a YOLO (normalización, clases, `difficult`,
+cajas que se salen), armado del dataset sin mezclar test, y la API con fotos
+reales (personas y autos, un perro), PNG con transparencia, archivos que no
+son imágenes y umbrales fuera de rango.
 
-Model Information
-- Model: YOLOv8n
-- Classes: person, car, dog
-- Input Size: 416x416
-- Loss Function: YOLOv8 default (objectness + classification + localization)
-- Training Epochs: 50
-- Batch Size: 16
-- Learning Rate: auto (YOLOv8 default scheduler)
-- Reproducibility: SEED=42
+## De dónde sale
 
-Training Details
+En 2026 se revisó el proyecto (antes `iajordy2`):
 
-Phase 1: Transfer Learning
-- Backbone: YOLOv8n pre-trained on COCO
-- Classes: 3 (person, car, dog)
-- Epochs: 50
-- Batch Size: 16
-- Device: Auto (GPU if available, CPU fallback)
-- Early Stopping: patience=10
+- El repo mezclaba restos de otro proyecto (una API TensorFlow de clasificación
+  multietiqueta, un `.bat`, una licencia de "Food Multilabel").
+- `prepare_dataset.py` generaba imágenes de **ruido aleatorio** con cajas al
+  azar; el dataset real lo armaba el cuaderno 01, que decía usar VOC 2012 pero
+  bajaba VOC 2007 y solo su parte de test.
+- `models/best_improved.pt` no era el YOLOv8s "mejorado": era el YOLOv8n del
+  cuaderno 03 (mAP50 0,588) con otro nombre. Los pesos del v8s nunca se
+  guardaron porque Ultralytics los dejó en `runs/detect/runs/...` y el cuaderno
+  los buscaba en otra carpeta. Se volvió a entrenar.
+- El cuaderno 05 mostraba como "AP50 por clase" el AP50-95.
+- La API solo cargaba el modelo si se ejecutaba el archivo directamente (con
+  `flask run` respondía que no había modelo), usaba confianza 0,05 e IoU 0,2
+  (muchos falsos positivos) y fallaba con PNG con transparencia.
 
-Metrics
-- mAP50 (mean Average Precision at IoU=0.5)
-- mAP50-95 (mean Average Precision at IoU=0.5:0.95)
-- Precision
-- Recall
+## Créditos de las imágenes
 
-Evaluation
-- Validation set: 50 images
-- Test set: 50 images
-- Confidence threshold: 0.5
-- IoU threshold: 0.45
+- `tests/fixtures/monjes_bangkok.jpg`: *Monks and cars in Thailand, Bangkok*,
+  Sherwin John Carlquist, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  vía [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:(Monks_and_cars_in_Thailand,_Bangkok)_-_DPLA_-_d0b7f000fc4c114deaa39a1d19b83681.jpg).
+- `tests/fixtures/perro_detector.jpg`: *Secretary Perdue visits APHIS Detector
+  Dog Trainers and Trainees*, USDA, dominio público, vía
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Secretary_Perdue_visits_APHIS_Detector_Dog_Trainers_and_Trainees_(20190405-OSEC-LSC-0675).jpg).
+- Las imágenes de `docs/` son esas mismas fotos con las detecciones del modelo.
+- Pascal VOC 2007 no se incluye en el repo; se descarga con el script.
 
-File Structure
-.
-├── data/
-│   ├── data.yaml               (YOLO config: 3 classes)
-│   ├── images/
-│   │   ├── train/              (400 images)
-│   │   ├── val/                (50 images)
-│   │   └── test/               (50 images)
-│   └── labels/                 (YOLO txt format)
-├── notebooks/
-│   ├── 01_dataset_validation.ipynb
-│   ├── 02_train_yolo.ipynb
-│   └── 03_inference.ipynb
-├── models/
-│   └── yolo_run/
-│       └── weights/
-│           └── best.pt         (trained model)
-├── app/
-│   └── inference_api.py        (Flask API)
-├── prepare_dataset.py
-├── test_inference_api.py
-└── README.md
+## Autores
 
-Reproducibility
-- Random Seed: 42 (NumPy, PyTorch, CUDA)
-- Dataset Split: 80/10/10 fixed
-- Model: YOLOv8n (deterministic)
-- Framework: Ultralytics YOLOv8
+- Michael Lata ([@Whiteherobot](https://github.com/Whiteherobot))
+- Jordy Romero ([@JordyRomeroa](https://github.com/JordyRomeroa))
 
-MLflow Integration
-- Backend: SQLite (file://mlruns)
-- Experiment: yolo_3class_detection
-- Runs: training, validation, model_registration
-- Model Registry: yolo_3class_detector (Production stage)
-
-Production Deployment
-- API: Flask WSGI server
-- Port: 5000 (default)
-- Concurrent Requests: Limited by model inference time
-- Model Format: YOLO .pt (PyTorch)
-- Inference Time: ~50-100ms per image (GPU), ~200-500ms (CPU)
+Licencia MIT.
