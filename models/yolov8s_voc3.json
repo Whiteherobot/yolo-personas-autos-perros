@@ -1,0 +1,27 @@
+{
+  "pesos": "yolov8s_voc3.pt",
+  "epocas_entrenadas": 91,
+  "mejor_epoca": 71,
+  "imgsz": 640,
+  "test": {
+    "map50": 0.8564981330933948,
+    "map50_95": 0.6097384788371993,
+    "precision": 0.8142450948572425,
+    "recall": 0.8013111356846507
+  },
+  "por_clase": {
+    "person": {
+      "ap50": 0.8685099603124865,
+      "ap50_95": 0.5885866938821356
+    },
+    "car": {
+      "ap50": 0.9059074002625861,
+      "ap50_95": 0.7052101151893708
+    },
+    "dog": {
+      "ap50": 0.7950770387051121,
+      "ap50_95": 0.5354186274400915
+    }
+  },
+  "nota": "Early stopping con patience 20; métricas sobre la división test oficial de VOC 2007 (2821 imágenes)."
+}
