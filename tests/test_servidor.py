@@ -6,7 +6,9 @@ from PIL import Image
 
 RAIZ = Path(__file__).resolve().parents[1]
 MODELO = RAIZ / "models" / "yolov8s_voc3.pt"
-FOTO = Path(__file__).parent / "fixtures" / "paseo_turku.jpg"
+FIXTURES = Path(__file__).parent / "fixtures"
+FOTO = FIXTURES / "monjes_bangkok.jpg"      # personas y autos
+PERRO = FIXTURES / "perro_detector.jpg"     # persona y perro
 
 pytestmark = pytest.mark.skipif(not MODELO.exists(), reason="falta el modelo entrenado")
 
@@ -28,17 +30,22 @@ def test_salud_e_informacion(cliente):
     assert b"Detector de personas" in cliente.get("/").data
 
 
-def test_detecta_persona_perro_y_auto_en_una_foto_real(cliente):
+def test_detecta_personas_y_autos_en_una_foto_real(cliente):
     r = enviar(cliente, FOTO.read_bytes())
     assert r.status_code == 200
     datos = r.get_json()
-    assert datos["conteo"]["person"] >= 1
-    assert datos["conteo"]["dog"] >= 1
-    assert datos["conteo"]["car"] >= 1
+    assert datos["conteo"]["person"] >= 2
+    assert datos["conteo"]["car"] >= 2
     assert datos["imagen_anotada"].startswith("data:image/jpeg;base64,")
     confianzas = [d["confianza"] for d in datos["detecciones"]]
     assert confianzas == sorted(confianzas, reverse=True)
     assert all(c >= 0.25 for c in confianzas)
+
+
+def test_detecta_el_perro(cliente):
+    datos = enviar(cliente, PERRO.read_bytes()).get_json()
+    assert datos["conteo"]["dog"] == 1
+    assert datos["conteo"]["person"] >= 1
 
 
 def test_una_confianza_mas_alta_deja_menos_detecciones(cliente):
