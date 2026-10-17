@@ -1,29 +1,4 @@
-torch>=2.0.0
-torchvision>=0.15.0
-torchaudio>=2.0.0
-ultralytics>=8.0.0
-mlflow>=2.0.0
-flask>=2.3.0
-flask-cors>=4.0.0
-pillow>=9.0.0
-numpy>=1.23.0,<2.0.0
-pyyaml>=6.0
-jupyter>=1.0.0
-notebook>=6.5.0
-ipykernel>=6.20.0
-requests>=2.31.0
-kagglehub>=0.1.0
-#
-# Para GPU (NVIDIA CUDA):
-#   Instalar CUDA Toolkit y cuDNN primero
-#   pip install tensorflow-gpu>=2.10.0
-#
-# Para desarrollo:
-#   pip install -r requirements.txt
-#   pip install black flake8 pytest  # Herramientas de desarrollo
-#
-# Verificar instalación:
-#   python -c "import tensorflow as tf; print(tf.__version__)"
-#   python -c "import streamlit; print(streamlit.__version__)"
-#
-# ===================================================================
+# Para la API. Con GPU, instalar antes torch desde https://pytorch.org.
+ultralytics>=8.3
+flask>=3.0
+pillow>=10
