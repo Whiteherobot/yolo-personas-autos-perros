@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YOLO Object Detection - Person, Car, Dog</title>
+    <title>Detector de personas, autos y perros</title>
     <style>
         * {
             margin: 0;
@@ -209,21 +209,30 @@
             font-size: 1rem;
             opacity: 0.9;
         }
+        .conf-control { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; }
+        .conf-control input { flex: 1; }
+        .upload-section.arrastrando { border-color: #667eea; background: #eef0ff; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎯 YOLO Object Detection</h1>
-            <p>Detección de personas, autos y perros con YOLOv8n</p>
+            <h1>Detector de personas, autos y perros</h1>
+            <p>YOLOv8 entrenado con Pascal VOC 2007</p>
         </header>
 
         <div class="main-content">
-            <div class="upload-section" onclick="document.getElementById('fileInput').click()">
-                <h2 style="margin-bottom: 15px;">📁 Subir Imagen</h2>
-                <p style="margin-bottom: 20px;">Arrastra una imagen aquí o haz clic para seleccionar</p>
-                <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
-                <button class="upload-btn" type="button">Seleccionar Imagen</button>
+            <div class="conf-control">
+                <label for="conf">Confianza mínima</label>
+                <input type="range" id="conf" min="0.05" max="0.9" step="0.05" value="0.25">
+                <span id="confValor">0.25</span>
+            </div>
+
+            <div class="upload-section" id="zona">
+                <h2 style="margin-bottom: 15px;">Subir imagen</h2>
+                <p style="margin-bottom: 20px;">Arrastre una imagen aquí o haga clic para elegirla</p>
+                <input type="file" id="fileInput" accept="image/*">
+                <button class="upload-btn" type="button">Elegir imagen</button>
             </div>
 
             <div id="loading" class="loading">
@@ -232,171 +241,90 @@
             </div>
 
             <div id="error" class="error hidden"></div>
-            <div id="success" class="success hidden"></div>
 
             <div id="results" class="hidden">
                 <div class="stats">
-                    <div class="stat-card">
-                        <div class="number" id="totalDetections">0</div>
-                        <div class="label">Detecciones</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="number" id="personCount">0</div>
-                        <div class="label">Personas</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="number" id="carCount">0</div>
-                        <div class="label">Autos</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="number" id="dogCount">0</div>
-                        <div class="label">Perros</div>
-                    </div>
+                    <div class="stat-card"><div class="number" id="total">0</div><div class="label">Detecciones</div></div>
+                    <div class="stat-card"><div class="number" id="cuenta-person">0</div><div class="label">Personas</div></div>
+                    <div class="stat-card"><div class="number" id="cuenta-car">0</div><div class="label">Autos</div></div>
+                    <div class="stat-card"><div class="number" id="cuenta-dog">0</div><div class="label">Perros</div></div>
                 </div>
 
                 <div class="preview-container">
-                    <div class="image-box">
-                        <h3>Imagen Original</h3>
-                        <img id="originalImage" alt="Original">
-                    </div>
-                    <div class="image-box">
-                        <h3>Detecciones</h3>
-                        <img id="annotatedImage" alt="Detecciones">
-                    </div>
+                    <div class="image-box"><h3>Original</h3><img id="original" alt="Imagen original"></div>
+                    <div class="image-box"><h3>Detecciones</h3><img id="anotada" alt="Imagen con las detecciones"></div>
                 </div>
 
                 <div class="detections-info">
-                    <h3 style="margin-bottom: 20px;">📋 Detecciones Detalladas</h3>
-                    <div id="detectionsList"></div>
+                    <h3 style="margin-bottom: 20px;">Detalle</h3>
+                    <div id="lista"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let selectedFile = null;
+        const NOMBRES = { person: "Persona", car: "Auto", dog: "Perro" };
+        const $ = (id) => document.getElementById(id);
+        let archivo = null;
 
-        function handleFileSelect(event) {
-            selectedFile = event.target.files[0];
-            if (selectedFile) {
-                showSuccess(`Imagen seleccionada: ${selectedFile.name}`);
-                predictImage();
+        $("conf").addEventListener("input", () => { $("confValor").textContent = $("conf").value; });
+        $("conf").addEventListener("change", () => archivo && predecir());
+        $("zona").addEventListener("click", () => $("fileInput").click());
+        $("fileInput").addEventListener("change", (e) => elegir(e.target.files[0]));
+        $("zona").addEventListener("dragover", (e) => { e.preventDefault(); $("zona").classList.add("arrastrando"); });
+        $("zona").addEventListener("dragleave", () => $("zona").classList.remove("arrastrando"));
+        $("zona").addEventListener("drop", (e) => {
+            e.preventDefault();
+            $("zona").classList.remove("arrastrando");
+            elegir(e.dataTransfer.files[0]);
+        });
+
+        function elegir(f) {
+            if (!f) return;
+            archivo = f;
+            $("original").src = URL.createObjectURL(f);
+            predecir();
+        }
+
+        async function predecir() {
+            $("error").classList.add("hidden");
+            $("loading").style.display = "block";
+            const datos = new FormData();
+            datos.append("image", archivo);
+            datos.append("conf", $("conf").value);
+            try {
+                const r = await fetch("/predict", { method: "POST", body: datos });
+                const res = await r.json();
+                if (!r.ok) throw new Error(res.error || "Error en la predicción");
+                mostrar(res);
+            } catch (error) {
+                $("error").textContent = error.message;
+                $("error").classList.remove("hidden");
+            } finally {
+                $("loading").style.display = "none";
             }
         }
 
-        async function predictImage() {
-            if (!selectedFile) {
-                showError('Por favor selecciona una imagen primero');
+        function mostrar(res) {
+            $("results").classList.remove("hidden");
+            $("anotada").src = res.imagen_anotada;
+            $("total").textContent = res.detecciones.length;
+            for (const clase of Object.keys(NOMBRES)) $(`cuenta-${clase}`).textContent = res.conteo[clase] ?? 0;
+            const lista = $("lista");
+            lista.replaceChildren();
+            if (!res.detecciones.length) {
+                lista.textContent = "No se detectó nada con esa confianza.";
                 return;
             }
-
-            hideMessages();
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').classList.add('hidden');
-
-            const formData = new FormData();
-            formData.append('image', selectedFile);
-
-            try {
-                const response = await fetch('/predict', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Error en la predicción');
-                }
-
-                displayResults(data);
-                showSuccess(`Predicción completada: ${data.num_detections} objetos detectados`);
-
-            } catch (error) {
-                showError(`Error: ${error.message}`);
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-            }
-        }
-
-        function displayResults(data) {
-            // Show results section
-            document.getElementById('results').classList.remove('hidden');
-
-            // Display original image
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('originalImage').src = e.target.result;
-            };
-            reader.readAsDataURL(selectedFile);
-
-            // Display annotated image
-            document.getElementById('annotatedImage').src = data.annotated_image;
-
-            // Update stats
-            const classCounts = {person: 0, car: 0, dog: 0};
-            data.detections.forEach(det => {
-                if (classCounts.hasOwnProperty(det.class)) {
-                    classCounts[det.class]++;
-                }
+            res.detecciones.forEach((d, i) => {
+                const fila = document.createElement("div");
+                fila.className = "detection-item";
+                const [x1, y1, x2, y2] = d.caja;
+                fila.textContent = `${i + 1}. ${NOMBRES[d.clase] ?? d.clase}: ${(d.confianza * 100).toFixed(1)} %, caja (${x1}, ${y1}) a (${x2}, ${y2})`;
+                lista.append(fila);
             });
-
-            document.getElementById('totalDetections').textContent = data.num_detections;
-            document.getElementById('personCount').textContent = classCounts.person;
-            document.getElementById('carCount').textContent = classCounts.car;
-            document.getElementById('dogCount').textContent = classCounts.dog;
-
-            // Display detections list
-            const detectionsList = document.getElementById('detectionsList');
-            detectionsList.innerHTML = '';
-
-            if (data.detections.length === 0) {
-                detectionsList.innerHTML = '<p style="text-align: center; color: #666;">No se detectaron objetos</p>';
-            } else {
-                data.detections.forEach((det, index) => {
-                    const detDiv = document.createElement('div');
-                    detDiv.className = 'detection-item';
-                    detDiv.innerHTML = `
-                        <span class="class-name">${index + 1}. ${det.class.toUpperCase()}</span>
-                        <span class="confidence"> - Confianza: ${(det.confidence * 100).toFixed(1)}%</span>
-                        <div class="bbox">
-                            BBox: [${det.bbox.x1}, ${det.bbox.y1}, ${det.bbox.x2}, ${det.bbox.y2}]
-                        </div>
-                    `;
-                    detectionsList.appendChild(detDiv);
-                });
-            }
         }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.classList.remove('hidden');
-        }
-
-        function showSuccess(message) {
-            const successDiv = document.getElementById('success');
-            successDiv.textContent = message;
-            successDiv.classList.remove('hidden');
-        }
-
-        function hideMessages() {
-            document.getElementById('error').classList.add('hidden');
-            document.getElementById('success').classList.add('hidden');
-        }
-
-        // Check API health on load
-        window.addEventListener('load', async () => {
-            try {
-                const response = await fetch('/health');
-                const data = await response.json();
-                if (!data.model_loaded) {
-                    showError('Advertencia: El modelo no está cargado. Entrena el modelo primero con notebook 03_training.ipynb');
-                }
-            } catch (error) {
-                showError('Error al conectar con la API');
-            }
-        });
     </script>
 </body>
 </html>
